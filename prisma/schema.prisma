@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  repo      String
+  prNumber  Int
+  action    String
+  diffUrl   String
+  status    String   @default("pending")
+  aiSummary String?
+  aiIssues  Json?
+  createdAt DateTime @default(now())
+  githubCommentId String?
+
+  @@map("review")
+}

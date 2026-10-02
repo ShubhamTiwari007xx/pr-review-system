@@ -1,0 +1,12 @@
+model Review{
+   id        Int      @id @default(autoincrement())
+  repo      String
+  prNumber  Int
+  action    String
+  diffUrl   String
+  status    String   @default("pending")
+  aiSummary String?
+  aiIssues  Json?
+  createdAt DateTime @default(now())
+}
+

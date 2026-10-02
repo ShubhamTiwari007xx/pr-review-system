@@ -1,0 +1,58 @@
+[
+  {
+    "id": "schema.public",
+    "label": "Create schema \"public\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Create schema \"public\"",
+        "sql": "CREATE SCHEMA IF NOT EXISTS \"public\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "table.review",
+    "label": "Create table \"review\"",
+    "summary": "Creates table \"review\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "review"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"review\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"review\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"review\"",
+        "sql": "CREATE TABLE \"public\".\"review\" (\n  \"action\" text NOT NULL,\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"diffUrl\" text NOT NULL,\n  \"id\" SERIAL NOT NULL,\n  \"prNumber\" int4 NOT NULL,\n  \"repo\" text NOT NULL,\n  \"status\" text DEFAULT 'pending' NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"review\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"review\""
+        ]
+      }
+    ]
+  }
+]
