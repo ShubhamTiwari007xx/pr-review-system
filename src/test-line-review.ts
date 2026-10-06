@@ -1,50 +1,38 @@
-import { validateReview } from "./validate-review";
+import { parseDiff } from "./diff-parser";
+import { validateReview } from "./ai/validate.review";
 
-async function main() {
-  const file = "auth.js";
+const diff = `
+diff --git a/math.js b/math.js
+index 1234567..abcdefg 100644
+--- a/math.js
++++ b/math.js
+@@ -1,3 +1,3 @@
+ function add(a, b) {
+-  return a + b;
++  return a - b;
+ }
+`;
 
-  const changedLines = [
-  {
-    line: 11,
-    code: "const password = req.body.password;",
-  },
-  {
-    line: 12,
-    code: "const user = createUser(password);",
-  },
-];;
+const changedFiles = parseDiff(diff);
 
+console.log("📦 Parsed changed lines:", JSON.stringify(changedFiles, null, 2));
+
+
+async function reviewChangedCode() {
   const prompt = `
 You are a strict senior code reviewer.
 
 Review ONLY the changed lines provided below.
 
-Do not review code outside these lines.
-Do not invent issues that are not supported by the code.
-
-For every real issue, return:
-- file
-- line
-- severity
-- description
-- suggestion
-
-Severity must be exactly according to the following definitions reduce hallucinations and ensure that severity is one use extremely carefully. The severity must be one of:
-"low", "medium", or "high".
+IMPORTANT RULES:
+- Only review the code shown in the changed lines.
+- Do not invent surrounding code or application behavior.
+- Do not assume how functions behave unless their behavior is visible.
+- Do not report an issue unless there is enough evidence in the provided code.
+- The file and line number in your response MUST exactly match one of the provided changed lines.
+- If there are no meaningful issues, return an empty issues array.
 
 Return ONLY valid JSON.
-Only report an issue when the provided code gives
-sufficient evidence for the claim.
-
-Do not assume that:
-- a database query exists
-- user input reaches a database
-- a value is stored
-- a function performs a specific operation
-- another part of the application behaves a certain way
-
-If the available context is insufficient to establish a problem,
-do not report the issue.
 
 Use exactly this structure:
 
@@ -54,52 +42,79 @@ Use exactly this structure:
       "file": "string",
       "line": 0,
       "severity": "low | medium | high",
-      "description": "string",
-      "suggestion": "string"
+      "description": "what is wrong",
+      "suggestion": "how to fix it"
     }
   ]
 }
 
-File:
-${file}
+Changed code:
 
-Changed lines:
-${changedLines.map((item) => `${item.line}: ${item.code}`).join("\n")}
+${changedFiles
+  .map(
+    (file) => `
+File: ${file.file}
+
+${file.changedLines
+  .map((changedLine) => `Line ${changedLine.line}: ${changedLine.code}`)
+  .join("\n")}
+`,
+  )
+  .join("\n")}
 `;
 
-  const response = await fetch(
-    "http://localhost:11434/api/generate",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "qwen2.5-coder:1.5b",
-        prompt,
-        format: "json",
-        stream: false,
-           options: {
+  console.log("\n🤖 Sending structured code to Ollama...\n");
+
+  const response = await fetch("http://localhost:11434/api/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "qwen2.5-coder:1.5b",
+      prompt,
+      format: "json",
+      stream: false,
+      options: {
         temperature: 0,
       },
-      }),
-    }
-  );
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Ollama request failed: ${response.status} ${response.statusText}`,
+    );
+  }
 
   const data = await response.json();
+
+  console.log("\n🤖 Raw AI response:\n");
+  console.log(data.response);
   const review = JSON.parse(data.response);
 
-   validateReview(review, [
-  {
-    file: "auth.js",
-    changedLines: [11, 12],
-  },
-]);
+  console.log("\n corrupting Parsed AI review:\n");
+  console.log(JSON.stringify(review, null, 2));
 
-console.log("✅ AI review passed validation!");
-console.log(review);
+  const validation = validateReview(review, changedFiles);
 
-  console.log(data.response);
+  console.log("\n🛡️ Validation result:\n");
+
+  console.log("✅ Valid issues:", validation.validIssues.length);
+  console.log("❌ Rejected issues:", validation.rejectedIssues.length);
+
+  if (validation.validIssues.length > 0) {
+    console.log("\n✅ Accepted issues:");
+    console.log(JSON.stringify(validation.validIssues, null, 2));
+  }
+
+  if (validation.rejectedIssues.length > 0) {
+    console.log("\n❌ Rejected issues:");
+
+    for (const rejected of validation.rejectedIssues) {
+      console.log(`- ${rejected.reason}`);
+    }
+  }
 }
 
-main();
+reviewChangedCode();

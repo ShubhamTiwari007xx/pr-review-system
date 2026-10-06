@@ -1,9 +1,7 @@
 // Express typings are unavailable in this project; keep the existing runtime import.
 import "dotenv/config";
-// Express typings are unavailable in this project.
+import { reviewQueue } from "./queue";
 // @ts-expect-error Express has no installed declaration file.
-
-import { reviewQueue } from "./queue.ts";
 import express from "express";
 import crypto from "crypto";
 import { prisma } from "./src/db";

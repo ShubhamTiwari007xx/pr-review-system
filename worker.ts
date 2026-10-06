@@ -1,19 +1,31 @@
 import IORedis from "ioredis";
 import { Worker } from "bullmq";
+
 import { prisma } from "./src/db";
+import { parseDiff } from "./src/diff-parser";
+import { validateReview } from "./src/ai/validate.review";
+
 import {
   fetchPullRequestDiff,
   postPullRequestComment,
 } from "./src/github/github";
+
 import { reviewWithOllama } from "./src/ai/ollama";
+
 const connection = new IORedis("redis://127.0.0.1:6379", {
   maxRetriesPerRequest: null,
 });
 
 const worker = new Worker(
   "review-queue",
+
   async (job) => {
-    const { reviewId, repo, prNumber, diffUrl } = job.data;
+    const {
+      reviewId,
+      repo,
+      prNumber,
+      diffUrl,
+    } = job.data;
 
     console.log("🔥 Processing review job!");
     console.log("Review ID:", reviewId);
@@ -21,59 +33,165 @@ const worker = new Worker(
     console.log("PR Number:", prNumber);
 
     try {
+      // ----------------------------------------
+      // 1. Mark review as processing
+      // ----------------------------------------
+
       await prisma.review.update({
         where: { id: reviewId },
-        data: { status: "processing" },
+        data: {
+          status: "processing",
+        },
       });
 
       console.log("✅ Review status updated to processing");
+
+      // ----------------------------------------
+      // 2. Fetch GitHub PR diff
+      // ----------------------------------------
 
       const diff = await fetchPullRequestDiff(diffUrl);
 
       console.log("📄 Diff fetched!");
       console.log("📏 Diff length:", diff.length);
-      console.log("🤖 Sending diff to Ollama...");
 
-      const review = await reviewWithOllama(diff);
+      // ----------------------------------------
+      // 3. Parse changed files and lines
+      // ----------------------------------------
+
+      const changedFiles = parseDiff(diff);
+
+      console.log("========== RAW DIFF ==========");
+console.log(diff);
+console.log("========== END RAW DIFF ==========");
+
+      console.log("🧩 Changed files parsed!");
+
+      console.log(
+        JSON.stringify(changedFiles, null, 2)
+      );
+
+      if (changedFiles.length === 0) {
+        throw new Error(
+          "No changed files found in the PR diff"
+        );
+      }
+
+      // ----------------------------------------
+      // 4. Send structured code to Ollama
+      // ----------------------------------------
+
+      console.log(
+        "🤖 Sending structured code to Ollama..."
+      );
+
+      const review =
+        await reviewWithOllama(changedFiles);
 
       console.log("✅ AI review completed!");
-      console.log(JSON.stringify(review, null, 2));
+
+      console.log(
+        JSON.stringify(review, null, 2)
+      );
+
+      // ----------------------------------------
+      // 5. Validate AI response
+      // ----------------------------------------
+
+      const validation = validateReview(
+        review,
+        changedFiles
+      );
+
+      const safeIssues =
+        validation.validIssues;
+
+      console.log(
+        "✅ Valid issues:",
+        safeIssues.length
+      );
+
+      console.log(
+        "❌ Rejected issues:",
+        validation.rejectedIssues.length
+      );
+
+      // ----------------------------------------
+      // 6. Log rejected AI issues
+      // ----------------------------------------
+
+      if (
+        validation.rejectedIssues.length > 0
+      ) {
+        console.log(
+          "⚠️ Some AI issues were rejected:"
+        );
+
+        for (
+          const rejected
+          of validation.rejectedIssues
+        ) {
+          console.log(
+            `- ${rejected.reason}`
+          );
+        }
+      }
+
+      // ----------------------------------------
+      // 7. Save validated AI issues
+      // ----------------------------------------
 
       await prisma.review.update({
         where: { id: reviewId },
         data: {
-          aiSummary: review.summary,
-          aiIssues: review.issues,
+          aiIssues: safeIssues,
         },
       });
 
-      console.log("💾 AI review saved to PostgreSQL!");
+      console.log(
+        "💾 AI review saved to PostgreSQL!"
+      );
 
-      const issueCount = review.issues.length;
+      // ----------------------------------------
+      // 8. Build GitHub comment
+      // ----------------------------------------
 
-      const severityEmoji: Record<string, string> = {
+      const severityEmoji: Record<
+        string,
+        string
+      > = {
         high: "🔴",
         medium: "🟡",
         low: "🔵",
       };
 
       const issuesSection =
-        issueCount === 0
-          ? "### ✅ No significant issues found\n\nNEXUS did not identify any meaningful problems in this change."
-          : `
-### 🚨 Issues Found: ${issueCount}
+        safeIssues.length === 0
+          ? `
+### ✅ No significant issues found
 
-${review.issues
+NEXUS did not identify any meaningful problems in this change.
+`
+          : `
+### 🚨 Issues Found: ${safeIssues.length}
+
+${safeIssues
   .map(
     (issue, index) => `
-#### ${index + 1}. ${severityEmoji[issue.severity]} ${issue.severity.toUpperCase()}
+#### ${index + 1}. ${
+      severityEmoji[issue.severity] ?? "⚪"
+    } ${issue.severity.toUpperCase()}
+
+**File:** \`${issue.file}\`
+
+**Line:** ${issue.line}
 
 **Issue:**  
 ${issue.description}
 
 **💡 Suggested Fix:**  
 ${issue.suggestion}
-`,
+`
   )
   .join("\n")}
 `;
@@ -83,7 +201,7 @@ ${issue.suggestion}
 
 ## 📋 Summary
 
-${review.summary}
+NEXUS analyzed the changed code in this pull request.
 
 ${issuesSection}
 
@@ -92,59 +210,142 @@ ${issuesSection}
 *Generated automatically by NEXUS*
 `;
 
-      const existingReview = await prisma.review.findUnique({
-        where: { id: reviewId },
-      });
+      // ----------------------------------------
+      // 9. Prevent duplicate GitHub comments
+      // ----------------------------------------
 
-      if (existingReview?.githubCommentId) {
-        console.log("⏭️ GitHub comment already exists. Skipping...");
-      } else {
-        const commentResponse = await postPullRequestComment(
-          repo,
-          prNumber,
-          comment,
-        );
-
-        await prisma.review.update({
-          where: { id: reviewId },
-          data: {
-            githubCommentId: String(commentResponse.id),
+      const existingReview =
+        await prisma.review.findUnique({
+          where: {
+            id: reviewId,
           },
         });
 
-        console.log("💬 AI review posted to GitHub!");
-      }
-    } catch (error) {
-      console.error("❌ Review processing failed!");
+      if (
+        existingReview?.githubCommentId
+      ) {
+        console.log(
+          "⏭️ GitHub comment already exists. Skipping..."
+        );
+      } else {
+        // ----------------------------------------
+        // 10. Post validated review to GitHub
+        // ----------------------------------------
 
-      const attempts = job.opts.attempts ?? 1;
-      const currentAttempt = job.attemptsMade + 1;
+        const commentResponse =
+          await postPullRequestComment(
+            repo,
+            prNumber,
+            comment
+          );
 
-      console.error(`Attempt ${currentAttempt}/${attempts}`);
+        // ----------------------------------------
+        // 11. Save GitHub comment ID
+        // ----------------------------------------
 
-      console.error(error instanceof Error ? error.message : error);
-
-      // Only permanently mark the review as failed
-      // after the final BullMQ attempt.
-      if (currentAttempt >= attempts) {
         await prisma.review.update({
-          where: { id: reviewId },
-          data: { status: "failed" },
+          where: {
+            id: reviewId,
+          },
+          data: {
+            githubCommentId:
+              String(commentResponse.id),
+          },
         });
 
-        console.log("🔴 Review permanently failed!");
+        console.log(
+          "💬 AI review posted to GitHub!"
+        );
+      }
+
+      // ----------------------------------------
+      // 12. Mark review as done
+      // ----------------------------------------
+
+      await prisma.review.update({
+        where: {
+          id: reviewId,
+        },
+        data: {
+          status: "done",
+        },
+      });
+
+      console.log(
+        "🎉 Review completed successfully!"
+      );
+    } catch (error) {
+      // ----------------------------------------
+      // Error handling + BullMQ retry
+      // ----------------------------------------
+
+      console.error(
+        "❌ Review processing failed!"
+      );
+
+      const attempts =
+        job.opts.attempts ?? 1;
+
+      const currentAttempt =
+        job.attemptsMade + 1;
+
+      console.error(
+        `Attempt ${currentAttempt}/${attempts}`
+      );
+
+      console.error(
+        error instanceof Error
+          ? error.message
+          : error
+      );
+
+      // Only permanently mark the review
+      // as failed after the final attempt.
+      if (
+        currentAttempt >= attempts
+      ) {
+        await prisma.review.update({
+          where: {
+            id: reviewId,
+          },
+          data: {
+            status: "failed",
+          },
+        });
+
+        console.log(
+          "🔴 Review permanently failed!"
+        );
       }
 
       // IMPORTANT:
-      // Rethrow so BullMQ knows the job failed
-      // and can perform its retry.
+      // Rethrow the error so BullMQ
+      // performs its retry.
       throw error;
     }
   },
-  { connection },
+
+  {
+    connection,
+  }
 );
+
+// ----------------------------------------
+// BullMQ failure listener
+// ----------------------------------------
+
 worker.on("failed", (job, err) => {
-  console.log(`❌ Job ${job?.id} failed!`);
-  console.log("Attempt:", job?.attemptsMade);
-  console.log("Error:", err.message);
+  console.log(
+    `❌ Job ${job?.id} failed!`
+  );
+
+  console.log(
+    "Attempt:",
+    job?.attemptsMade
+  );
+
+  console.log(
+    "Error:",
+    err.message
+  );
 });

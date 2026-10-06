@@ -1,6 +1,11 @@
+export type ChangedLine = {
+  line: number;
+  code: string;
+};
+
 export type ChangedFile = {
   file: string;
-  changedLines: number[];
+  changedLines: ChangedLine[];
 };
 
 export function parseDiff(diff: string): ChangedFile[] {
@@ -46,7 +51,11 @@ export function parseDiff(diff: string): ChangedFile[] {
 
     // Added line
     if (line.startsWith("+") && !line.startsWith("+++")) {
-      currentFile.changedLines.push(currentLine);
+      currentFile.changedLines.push({
+        line: currentLine,
+        code: line.slice(1),
+      });
+
       currentLine++;
       continue;
     }
