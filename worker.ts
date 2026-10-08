@@ -3,13 +3,18 @@ import { Worker } from "bullmq";
 
 import { prisma } from "./src/db";
 import { parseDiff } from "./src/diff-parser";
+import { getCodeContext } from "./src/review context";
 import { validateReview } from "./src/ai/validate.review";
-
 import {
   fetchPullRequestDiff,
+  getPullRequest,
   postPullRequestComment,
+  downloadRepositoryArchive,
+ 
 } from "./src/github/github";
 
+import { extractRepositoryArchive , getRepositoryRoot} from "./src/github/extract-repository";
+import { buildRepositoryGraph } from "./src/architecture/scanner";
 import { reviewWithOllama } from "./src/ai/ollama";
 
 const connection = new IORedis("redis://127.0.0.1:6379", {
@@ -60,7 +65,6 @@ const worker = new Worker(
       // ----------------------------------------
 
       const changedFiles = parseDiff(diff);
-
       console.log("========== RAW DIFF ==========");
 console.log(diff);
 console.log("========== END RAW DIFF ==========");
@@ -76,6 +80,88 @@ console.log("========== END RAW DIFF ==========");
           "No changed files found in the PR diff"
         );
       }
+        
+      console.log("🏗️ Fetching pull request information...");
+
+const pullRequest = await getPullRequest(
+  repo,
+  prNumber
+);
+
+const headSha = pullRequest.head.sha;
+
+console.log("🔖 PR head SHA:", headSha);
+
+console.log("📦 Downloading repository archive...");
+
+const repositoryArchive =
+  await downloadRepositoryArchive(
+    repo,
+    headSha
+  );
+
+console.log(
+  "📦 Repository archive downloaded!"
+);
+
+console.log(
+  "📏 Archive size:",
+  repositoryArchive.length
+);
+
+console.log(
+  "📂 Extracting repository archive..."
+);
+
+const extractedRepositoryPath =
+  extractRepositoryArchive(
+    repositoryArchive
+  );
+
+const repositoryRoot =
+  getRepositoryRoot(
+    extractedRepositoryPath
+  );
+
+console.log(
+  "🏠 Repository root:",
+  repositoryRoot
+);
+
+for (const changedFile of changedFiles) {
+  for (const changedLine of changedFile.changedLines) {
+    const context = getCodeContext(
+      repositoryRoot,
+      changedFile.file,
+      changedLine.line
+    );
+
+    console.log("========== CODE CONTEXT ==========");
+    console.log("File:", changedFile.file);
+    console.log("Changed line:", changedLine.line);
+    console.log(context);
+    console.log("========== END CODE CONTEXT ==========");
+  }
+}
+
+console.log(
+  "🏗️ Building repository architecture graph..."
+);
+
+const repositoryGraph =
+  buildRepositoryGraph(
+    repositoryRoot
+  );
+
+console.log(
+  "🧩 Components:",
+  repositoryGraph.components.length
+);
+
+console.log(
+  "🔗 Relationships:",
+  repositoryGraph.relationships.length
+);
 
       // ----------------------------------------
       // 4. Send structured code to Ollama

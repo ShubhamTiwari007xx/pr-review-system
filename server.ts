@@ -26,6 +26,7 @@ function verifyGitHubSignature(req: any) {
   }
 
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  console.log("🔐 Verifying GitHub signature...");
 
   if (!secret) {
     console.error("❌ GITHUB_WEBHOOK_SECRET is missing");
