@@ -1,0 +1,154 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="NEXUS AI-powered pull request review dashboard"
+  />
+  <title>NEXUS | Architecture Dashboard</title>
+
+  <link rel="stylesheet" href="/public/style.css" />
+
+  <!-- Mermaid renders our repository architecture diagram -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script defer src="/public/app.js"></script>
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">N</div>
+        <div>
+          <h1>NEXUS</h1>
+          <p>AI CODE INTELLIGENCE</p>
+        </div>
+      </div>
+
+      <nav class="navigation" aria-label="Main navigation">
+        <a href="#overview" class="nav-link active">
+          <span>◈</span> Overview
+        </a>
+        <a href="#architecture" class="nav-link">
+          <span>⌘</span> Architecture
+        </a>
+        <a href="#reviews" class="nav-link">
+          <span>⇄</span> Pull request reviews
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="status-dot"></span>
+        Local development
+      </div>
+    </aside>
+
+    <main class="main-content" id="overview">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">REPOSITORY INTELLIGENCE</p>
+          <h2>Architecture Overview</h2>
+        </div>
+
+        <div class="connection-status">
+          <span class="status-dot"></span>
+          System dashboard
+        </div>
+      </header>
+
+      <section class="repository-heading">
+        <div>
+          <p class="eyebrow">CURRENT REPOSITORY</p>
+          <h3 id="repository-name">NEXUS</h3>
+          <p class="muted">
+            Understand your codebase. Trace dependencies. Review changes.
+          </p>
+        </div>
+
+        <button id="refresh-button" type="button">
+          ↻ Refresh diagram
+        </button>
+      </section>
+
+      <section class="stats-grid" aria-label="Repository statistics">
+        <article class="stat-card">
+          <p>Components</p>
+          <h3 id="component-count">—</h3>
+          <span>Source files detected</span>
+        </article>
+
+        <article class="stat-card">
+          <p>Relationships</p>
+          <h3 id="relationship-count">—</h3>
+          <span>Import dependencies</span>
+        </article>
+
+        <article class="stat-card">
+          <p>Changed files</p>
+          <h3 id="changed-count">—</h3>
+          <span>In the selected review</span>
+        </article>
+
+        <article class="stat-card">
+          <p>Impacted files</p>
+          <h3 id="impacted-count">—</h3>
+          <span>Potentially affected components</span>
+        </article>
+      </section>
+
+      <section class="panel" id="architecture">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">DEPENDENCY ANALYSIS</p>
+            <h3>Repository Architecture</h3>
+          </div>
+
+          <div class="legend">
+            <span><i class="legend-dot changed"></i> Changed</span>
+            <span><i class="legend-dot impacted"></i> Impacted</span>
+          </div>
+        </div>
+
+        <div id="diagram-container" class="diagram-container">
+          <div class="loading-state">
+            <div class="loader"></div>
+            <p>Preparing architecture diagram...</p>
+          </div>
+        </div>
+
+        <p class="diagram-note">
+          Each node represents a source file. Arrows represent import
+          dependencies. Highlighting will be enabled when review data is connected.
+        </p>
+      </section>
+
+      <section class="panel" id="reviews">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">ACTIVITY</p>
+            <h3>Recent Reviews</h3>
+          </div>
+          <span class="coming-soon">Coming next</span>
+        </div>
+
+        <div class="empty-state">
+          <div class="empty-icon">⌘</div>
+          <h4>No reviews loaded yet</h4>
+          <p>
+            Once the dashboard is connected to the NEXUS API,
+            your pull request review history will appear here.
+          </p>
+        </div>
+      </section>
+
+      <footer class="page-footer">
+        NEXUS · AI-powered code review and architecture intelligence
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
+

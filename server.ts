@@ -5,7 +5,13 @@ import { reviewQueue } from "./queue";
 import express from "express";
 import crypto from "crypto";
 import { prisma } from "./src/db";
+
+import path from "path";
+import { buildRepositoryGraph } from "./src/architecture/scanner";
+import { generateArchitectureDiagram } from "./src/architecture/architecture-diagram";
+
 const app = express();
+app.use(express.static("public"));
 const PORT = 3000;
 
 // Keep the raw request body for GitHub signature verification
@@ -129,6 +135,39 @@ app.post("/webhook", async (req, res) => {
     return res.status(500).send("Database error");
   }
 });
+
+// Repository architecture API
+app.get("/api/architecture", (req, res) => {
+  try {
+    // server.ts is in the project root.
+    const repositoryRoot = path.resolve(".");
+    const graph = buildRepositoryGraph(repositoryRoot);
+
+    const changedFiles: string[] = [];
+    const impactedFiles: string[] = [];
+
+    const diagram = generateArchitectureDiagram(
+      graph,
+      changedFiles,
+      impactedFiles,
+    );
+
+    res.json({
+      repository: "NEXUS",
+      components: graph.components.length,
+      relationships: graph.relationships.length,
+      changedFiles,
+      impactedFiles,
+      diagram,
+    });
+  } catch (error) {
+    console.error("Architecture API error:", error);
+    res.status(500).json({
+      error: "Failed to generate repository architecture",
+    });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`🚀 NEXUS server running on port ${PORT}`);
