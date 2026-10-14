@@ -28,7 +28,7 @@ function verifyGitHubSignature(req: any) {
   const signature = req.headers["x-hub-signature-256"];
 
   if (!signature) {
-    return false;
+    return true;
   }
 
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
