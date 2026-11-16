@@ -11,9 +11,8 @@ import { buildRepositoryGraph } from "./src/architecture/scanner";
 import { generateArchitectureDiagram } from "./src/architecture/architecture-diagram";
 
 const app = express();
-app.use(express.static("public"));
 const PORT = 3000;
-
+app.use(express.static("public"));
 // Keep the raw request body for GitHub signature verification
 app.use(
   express.json({
@@ -168,8 +167,38 @@ app.get("/api/architecture", (req, res) => {
   }
 });
 
+app.get("/api/reviews", async (req, res) => {
+  try {
+    const reviews = await prisma.review.findMany({
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 20,
+      select: {
+        id: true,
+        repo: true,
+        prNumber: true,
+        action: true,
+        status: true,
+        aiSummary: true,
+        aiIssues: true,
+        createdAt: true,
+      },
+    });
+
+    return res.json({ reviews });
+  } catch (error) {
+    console.error("Failed to fetch reviews:", error);
+
+    return res.status(500).json({
+      error: "Failed to fetch reviews",
+    });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`🚀 NEXUS server running on port ${PORT}`);
 });
+
 
